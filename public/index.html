@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f4f6f1">
+  <meta name="theme-color" content="#dce7e2">
   <title>VP Minesweeper — Simple Minesweeper</title>
   <style>
     :root {
       color-scheme: light;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: #24332f;
-      background: #f4f6f1;
+      background: #dce7e2;
       font-synthesis: none;
       text-rendering: optimizeLegibility;
       --green: #326c58;
       --green-dark: #245441;
       --muted: #687872;
-      --line: #e2e8e1;
-      --panel: #ffffff;
+      --line: rgba(255, 255, 255, .75);
+      --panel: rgba(255, 255, 255, .93);
     }
 
     * { box-sizing: border-box; }
@@ -27,9 +27,24 @@
       min-height: 100vh;
       margin: 0;
       padding: 40px 20px 56px;
-      background:
-        radial-gradient(ellipse at 10% 0%, rgba(218, 231, 215, .78), transparent 42%),
-        #f4f6f1;
+      background: #dce7e2;
+    }
+
+    .scenery { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: #c5d4cf; }
+    .road-photo { position: absolute; inset: -6%; background: url("./assets/foggy-road.jpg") center 58% / cover no-repeat; animation: walk-forward 42s ease-in-out infinite alternate; will-change: transform; }
+    .fog { position: absolute; inset: -25%; background: radial-gradient(ellipse at 15% 60%, rgba(247, 251, 249, .65), transparent 55%), radial-gradient(ellipse at 80% 35%, rgba(234, 242, 239, .6), transparent 60%); animation: drifting-mist 38s ease-in-out infinite alternate; }
+    .fog-far { opacity: .5; animation-duration: 53s; animation-direction: alternate-reverse; }
+    .scenery::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(224, 236, 230, .22), rgba(213, 228, 220, .35)); }
+    .scenery.is-paused .road-photo, .scenery.is-paused .fog { animation-play-state: paused; }
+
+    @keyframes walk-forward {
+      from { transform: scale(1) translateY(0); }
+      to { transform: scale(1.1) translateY(1%); }
+    }
+
+    @keyframes drifting-mist {
+      from { transform: translateX(-7%) translateY(2%); }
+      to { transform: translateX(7%) translateY(-2%); }
     }
 
     button, input { font: inherit; }
@@ -55,6 +70,11 @@
     .welcome-dialog h2 { margin: 8px 0 12px; font-family: Georgia, "Times New Roman", serif; font-size: 2rem; line-height: 1.15; }
     .welcome-dialog p:not(.eyebrow) { margin: 0; color: #596c62; line-height: 1.6; }
     .welcome-dialog .primary { margin-top: 24px; min-height: 46px; }
+    .welcome-dialog .secondary { margin-top: 9px; }
+    .dialog-symbol { display: grid; place-items: center; width: 64px; height: 64px; margin: 0 auto 20px; border-radius: 50%; background: #e8f0e6; font-size: 1.8rem; }
+    .welcome-dialog[data-state="win"] .dialog-symbol { background: #fff1cd; }
+    .welcome-dialog[data-state="loss"] .dialog-symbol { background: #e6edf3; }
+    .dialog-quote { margin: 18px 0 0; padding: 14px 0 0; border-top: 1px solid #dce5db; color: #52675e; font-family: Georgia, "Times New Roman", serif; font-style: italic; line-height: 1.6; }
     .game-content:not([hidden]) { animation: arrive .3s ease-out both; }
 
     @keyframes arrive {
@@ -62,9 +82,13 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    .page { width: min(980px, 100%); margin: 0 auto; }
+    .page { position: relative; z-index: 1; width: min(980px, 100%); margin: 0 auto; }
 
-    header { margin-bottom: 26px; }
+    header { margin-bottom: 22px; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: rgba(250, 253, 249, .9); box-shadow: 0 12px 34px rgba(34, 55, 45, .06); backdrop-filter: blur(14px); }
+    .header-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .header-top .eyebrow { margin: 0; }
+    .motion-toggle { flex-shrink: 0; padding: 7px 11px; border: 1px solid #bccdc0; border-radius: 999px; background: #f7faf5; color: #365348; font-size: .75rem; cursor: pointer; }
+    .motion-toggle:hover { background: #e9f1e6; }
 
     .eyebrow {
       margin: 0 0 8px;
@@ -98,6 +122,7 @@
       border-radius: 18px;
       background: var(--panel);
       box-shadow: 0 12px 34px rgba(34, 55, 45, .055);
+      backdrop-filter: blur(14px);
     }
 
     .board-panel { min-width: 0; padding: 22px; }
@@ -228,7 +253,7 @@
     .help-panel li { display: flex; gap: 9px; color: #65746e; font-size: .82rem; line-height: 1.45; }
     .help-panel li span:first-child { width: 19px; flex: 0 0 19px; text-align: center; }
 
-    footer { margin-top: 18px; color: #77837d; font-size: .76rem; text-align: center; }
+    footer { width: fit-content; max-width: 100%; margin: 18px auto 0; padding: 9px 15px; border-radius: 12px; background: rgba(250, 253, 249, .9); color: #53665b; font-size: .76rem; text-align: center; }
 
     @media (max-width: 720px) {
       body { padding: 28px 14px 40px; }
@@ -236,29 +261,44 @@
       .help-panel ul { grid-template-columns: 1fr; gap: 12px; }
       .board-panel { padding: 17px 13px; }
       .settings, .help-panel { padding: 16px; }
+      header { padding: 20px; }
     }
 
     @media (max-width: 480px) {
       .board { --cell-size: 32px; }
+      .header-top { flex-wrap: wrap; }
     }
 
     @media (prefers-reduced-motion: reduce) {
       .welcome-dialog[open], .game-content:not([hidden]) { animation: none; }
       .cell { transition: none; }
+      .scenery:not(.motion-enabled) .road-photo, .scenery:not(.motion-enabled) .fog { animation: none; }
     }
   </style>
 </head>
 <body>
+  <div class="scenery" id="scenery" aria-hidden="true">
+    <div class="road-photo"></div>
+    <div class="fog fog-far"></div>
+    <div class="fog"></div>
+  </div>
+
   <dialog class="welcome-dialog" id="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-message">
-    <p class="eyebrow">A little luck, a little logic</p>
+    <span class="dialog-symbol" id="dialog-symbol" aria-hidden="true">🌿</span>
+    <p class="eyebrow" id="dialog-eyebrow">A little luck, a little logic</p>
     <h2 id="welcome-title">Hello, Minesweeper!</h2>
     <p id="welcome-message">Welcome to the game. Take your time, trust the numbers, and have fun. Hope you win!</p>
+    <blockquote class="dialog-quote" id="dialog-quote" hidden></blockquote>
     <button class="primary" id="welcome-start" type="button" autofocus>Let’s play</button>
+    <button class="secondary" id="dialog-view-board" type="button" hidden>View board</button>
   </dialog>
 
   <main class="page">
     <header>
-      <p class="eyebrow">A little game for your browser</p>
+      <div class="header-top">
+        <p class="eyebrow">A quiet moment. A little challenge.</p>
+        <button class="motion-toggle" id="motion-toggle" type="button" aria-pressed="false">Pause background</button>
+      </div>
       <h1>Minesweeper</h1>
       <p class="intro">Find every safe square without hitting a mine. Pick a board size, then uncover a cell to begin.</p>
     </header>
@@ -290,7 +330,7 @@
                   <input id="cols" name="cols" type="number" min="4" max="13" step="1" value="9" inputmode="numeric">
                 </label>
               </div>
-              <button class="primary" type="submit">Start new game</button>
+              <button class="primary" id="new-game" type="submit">Start new game</button>
             </form>
             <button class="secondary" id="flag-mode" type="button" aria-pressed="false" style="margin-top: 9px">Flag mode: off</button>
           </section>
@@ -325,7 +365,24 @@
     const flagModeButton = document.querySelector("#flag-mode");
     const welcomeDialog = document.querySelector("#welcome-dialog");
     const welcomeStartButton = document.querySelector("#welcome-start");
+    const dialogEyebrow = document.querySelector("#dialog-eyebrow");
+    const dialogSymbol = document.querySelector("#dialog-symbol");
+    const dialogQuote = document.querySelector("#dialog-quote");
+    const viewBoardButton = document.querySelector("#dialog-view-board");
+    const welcomeTitle = document.querySelector("#welcome-title");
+    const welcomeMessage = document.querySelector("#welcome-message");
     const gameContent = document.querySelector("#game-content");
+    const newGameButton = document.querySelector("#new-game");
+    const scenery = document.querySelector("#scenery");
+    const motionToggle = document.querySelector("#motion-toggle");
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    const encouragements = [
+      "Every new board is a fresh beginning.",
+      "A small setback is just another step toward a win.",
+      "Take a breath. Your next move can be a better one.",
+      "Progress starts with the courage to try again."
+    ];
 
     let rows = 9;
     let cols = 9;
@@ -338,6 +395,51 @@
     let gameOver = false;
     let explodedCell = null;
     let flagMode = false;
+    let dialogMode = "welcome";
+    let pendingBoardSize = null;
+    let backgroundPaused = motionPreference.matches;
+
+    function setBackgroundPaused(paused) {
+      backgroundPaused = paused;
+      scenery.classList.toggle("is-paused", paused);
+      motionToggle.setAttribute("aria-pressed", String(paused));
+      motionToggle.textContent = paused ? "Play background" : "Pause background";
+    }
+
+    function showGameDialog(mode) {
+      dialogMode = mode;
+      welcomeDialog.dataset.state = mode;
+      welcomeDialog.returnValue = "";
+      const isResult = mode === "win" || mode === "loss";
+      viewBoardButton.hidden = !isResult;
+      dialogQuote.hidden = !isResult;
+      welcomeStartButton.textContent = isResult ? "Start new game" : "Let’s play";
+
+      if (mode === "win") {
+        dialogEyebrow.textContent = "Every safe square, found";
+        dialogSymbol.textContent = "🏆";
+        welcomeTitle.textContent = "Congratulations!";
+        welcomeMessage.textContent = "You cleared the board! Great thinking, steady moves, and a well-earned win.";
+        dialogQuote.textContent = "One thoughtful move at a time can lead to something wonderful.";
+      } else if (mode === "loss") {
+        dialogEyebrow.textContent = "There’s always another chance";
+        dialogSymbol.textContent = "🌱";
+        welcomeTitle.textContent = "Better luck next time";
+        welcomeMessage.textContent = "Sorry, that was a mine. Take a little breath and give a fresh board a try.";
+        dialogQuote.textContent = encouragements[Math.floor(Math.random() * encouragements.length)];
+      } else if (mode === "ready") {
+        dialogEyebrow.textContent = "A fresh board, a fresh chance";
+        dialogSymbol.textContent = "✨";
+        welcomeTitle.textContent = "Let’s go!";
+        welcomeMessage.textContent = "Take your time and trust the numbers. Your first reveal is always safe. You’ve got this!";
+      } else {
+        dialogEyebrow.textContent = "A little luck, a little logic";
+        dialogSymbol.textContent = "🌿";
+        welcomeTitle.textContent = "Hello, Minesweeper!";
+        welcomeMessage.textContent = "Welcome to the game. Take your time, trust the numbers, and have fun. Hope you win!";
+      }
+      welcomeDialog.showModal();
+    }
 
     function cellKey(row, col) {
       return `${row},${col}`;
@@ -454,6 +556,7 @@
         gameOver = true;
         setStatus("That was a mine. Start a new game and try again.", "loss");
         renderBoard();
+        showGameDialog("loss");
         return;
       }
 
@@ -479,9 +582,10 @@
         setStatus("Keep going. The numbers show nearby mines.");
       }
       renderBoard();
+      if (gameOver) showGameDialog("win");
     }
 
-    function startNewGame(event) {
+    function requestNewGame(event) {
       if (event) event.preventDefault();
       const requestedRows = Number(rowsInput.value);
       const requestedCols = Number(colsInput.value);
@@ -497,6 +601,11 @@
         return;
       }
 
+      pendingBoardSize = { rows: requestedRows, cols: requestedCols };
+      showGameDialog("ready");
+    }
+
+    function startNewGame(requestedRows, requestedCols) {
       rows = requestedRows;
       cols = requestedCols;
       // Preserve the classic 9x9 board's 10 mines while scaling with board area.
@@ -516,21 +625,45 @@
       renderBoard();
     }
 
-    settingsForm.addEventListener("submit", startNewGame);
+    settingsForm.addEventListener("submit", requestNewGame);
     flagModeButton.addEventListener("click", () => {
       flagMode = !flagMode;
       flagModeButton.setAttribute("aria-pressed", String(flagMode));
       flagModeButton.textContent = `Flag mode: ${flagMode ? "on" : "off"}`;
     });
 
-    welcomeStartButton.addEventListener("click", () => welcomeDialog.close());
+    welcomeStartButton.addEventListener("click", () => {
+      const isResult = dialogMode === "win" || dialogMode === "loss";
+      welcomeDialog.close(isResult ? "restart" : "play");
+    });
+    viewBoardButton.addEventListener("click", () => welcomeDialog.close("view"));
     welcomeDialog.addEventListener("close", () => {
-      gameContent.hidden = false;
-      startNewGame();
-      boardElement.querySelector("button").focus({ preventScroll: true });
-    }, { once: true });
+      if (dialogMode === "welcome" || dialogMode === "ready") {
+        gameContent.hidden = false;
+        const size = pendingBoardSize || { rows, cols };
+        startNewGame(size.rows, size.cols);
+        pendingBoardSize = null;
+        boardElement.querySelector("button").focus({ preventScroll: true });
+      } else if (welcomeDialog.returnValue === "restart") {
+        // Replay the completed board size, even if the settings were edited mid-game.
+        rowsInput.value = rows;
+        colsInput.value = cols;
+        requestNewGame();
+      } else {
+        newGameButton.focus({ preventScroll: true });
+      }
+    });
 
-    welcomeDialog.showModal();
+    motionToggle.addEventListener("click", () => {
+      scenery.classList.add("motion-enabled");
+      setBackgroundPaused(!backgroundPaused);
+    });
+    motionPreference.addEventListener("change", (event) => {
+      scenery.classList.remove("motion-enabled");
+      setBackgroundPaused(event.matches);
+    });
+    setBackgroundPaused(backgroundPaused);
+    showGameDialog("welcome");
   </script>
 </body>
 </html>
