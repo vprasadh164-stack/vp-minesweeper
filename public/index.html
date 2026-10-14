@@ -34,6 +34,34 @@
 
     button, input { font: inherit; }
 
+    [hidden] { display: none !important; }
+
+    body:has(.welcome-dialog[open]) { overflow: hidden; }
+
+    .welcome-dialog {
+      width: min(420px, calc(100% - 32px));
+      max-height: calc(100dvh - 32px);
+      padding: 32px;
+      border: 1px solid #d7e3d6;
+      border-radius: 22px;
+      background: #fcfdf9;
+      color: #24332f;
+      text-align: center;
+      box-shadow: 0 24px 80px rgba(28, 51, 41, .18);
+    }
+
+    .welcome-dialog[open] { animation: arrive .24s ease-out both; }
+    .welcome-dialog::backdrop { background: rgba(28, 46, 37, .28); backdrop-filter: blur(5px); }
+    .welcome-dialog h2 { margin: 8px 0 12px; font-family: Georgia, "Times New Roman", serif; font-size: 2rem; line-height: 1.15; }
+    .welcome-dialog p:not(.eyebrow) { margin: 0; color: #596c62; line-height: 1.6; }
+    .welcome-dialog .primary { margin-top: 24px; min-height: 46px; }
+    .game-content:not([hidden]) { animation: arrive .3s ease-out both; }
+
+    @keyframes arrive {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     .page { width: min(980px, 100%); margin: 0 auto; }
 
     header { margin-bottom: 26px; }
@@ -114,6 +142,7 @@
     .board-scroll { overflow-x: auto; padding: 1px 1px 6px; }
 
     .board {
+      --cell-size: 34px;
       display: grid;
       width: max-content;
       gap: 4px;
@@ -126,8 +155,8 @@
 
     .cell {
       display: grid;
-      width: 34px;
-      height: 34px;
+      width: var(--cell-size);
+      height: var(--cell-size);
       place-items: center;
       padding: 0;
       border: 1px solid #cbd8ca;
@@ -144,8 +173,8 @@
     .cell:not(:disabled):hover { transform: translateY(-1px); border-color: #83a38e; background: #f7fbf5; }
     .cell:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #8bbda0; outline-offset: 2px; }
     .cell:disabled { cursor: default; }
-    .cell.revealed { border-color: #e2e7e1; background: #fff; }
-    .cell.empty { background: #f8faf7; }
+    .cell.revealed { border-color: #b8cfdc; background: #e8f2f7; }
+    .cell.empty { border-color: #8aafc3; background: #c6dce8; box-shadow: inset 0 1px 3px rgba(47, 85, 107, .1); }
     .cell.flagged { color: #bd5941; }
     .cell.mine { background: #fff1ec; }
     .cell.hit { border-color: #c9563b; background: #f7d7cd; }
@@ -193,29 +222,40 @@
     .secondary:hover { background: #f5f8f4; }
     .secondary[aria-pressed="true"] { border-color: #a7cbb3; background: #edf7ef; color: #225d38; }
 
-    .help-panel { padding: 19px 20px; }
+    .help-panel { margin-top: 18px; padding: 19px 20px; }
     .help-panel h2 { margin: 0 0 11px; font-size: .94rem; }
-    .help-panel ul { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+    .help-panel ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0; padding: 0; list-style: none; }
     .help-panel li { display: flex; gap: 9px; color: #65746e; font-size: .82rem; line-height: 1.45; }
-    .help-panel li span { width: 19px; flex: 0 0 19px; text-align: center; }
+    .help-panel li span:first-child { width: 19px; flex: 0 0 19px; text-align: center; }
 
     footer { margin-top: 18px; color: #77837d; font-size: .76rem; text-align: center; }
 
     @media (max-width: 720px) {
       body { padding: 28px 14px 40px; }
       .game-layout { grid-template-columns: 1fr; }
-      .side-panel { grid-template-columns: 1fr 1fr; align-items: start; }
+      .help-panel ul { grid-template-columns: 1fr; gap: 12px; }
       .board-panel { padding: 17px 13px; }
       .settings, .help-panel { padding: 16px; }
     }
 
     @media (max-width: 480px) {
-      .side-panel { grid-template-columns: 1fr; }
-      .cell { width: 32px; height: 32px; }
+      .board { --cell-size: 32px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .welcome-dialog[open], .game-content:not([hidden]) { animation: none; }
+      .cell { transition: none; }
     }
   </style>
 </head>
 <body>
+  <dialog class="welcome-dialog" id="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-message">
+    <p class="eyebrow">A little luck, a little logic</p>
+    <h2 id="welcome-title">Hello, Minesweeper!</h2>
+    <p id="welcome-message">Welcome to the game. Take your time, trust the numbers, and have fun. Hope you win!</p>
+    <button class="primary" id="welcome-start" type="button" autofocus>Let’s play</button>
+  </dialog>
+
   <main class="page">
     <header>
       <p class="eyebrow">A little game for your browser</p>
@@ -223,46 +263,48 @@
       <p class="intro">Find every safe square without hitting a mine. Pick a board size, then uncover a cell to begin.</p>
     </header>
 
-    <div class="game-layout">
-      <section class="panel board-panel" aria-labelledby="board-title">
-        <div class="board-heading">
-          <h2 id="board-title">Your board</h2>
-          <span class="board-size" id="board-size">9 × 9</span>
-        </div>
-        <div class="status" id="status" role="status" aria-live="polite">Choose a cell to begin. Your first reveal is always safe.</div>
-        <div class="board-scroll">
-          <div class="board" id="board" role="grid" aria-label="Minesweeper board"></div>
-        </div>
-        <p class="mine-count" id="mine-count">Flags: 0 / 10 mines</p>
+    <div class="game-content" id="game-content" hidden>
+      <div class="game-layout">
+        <section class="panel board-panel" aria-labelledby="board-title">
+          <div class="board-heading">
+            <h2 id="board-title">Your board</h2>
+            <span class="board-size" id="board-size">9 × 9</span>
+          </div>
+          <div class="status" id="status" role="status" aria-live="polite">Choose a cell to begin. Your first reveal is always safe.</div>
+          <div class="board-scroll">
+            <div class="board" id="board" role="grid" aria-label="Minesweeper board"></div>
+          </div>
+          <p class="mine-count" id="mine-count">Flags: 0 / 10 mines</p>
+        </section>
+
+        <aside class="side-panel">
+          <section class="panel settings" aria-labelledby="settings-title">
+            <h2 id="settings-title">Board size</h2>
+            <p>Choose any number of rows and columns from 4 to 13.</p>
+            <form id="settings-form" novalidate>
+              <div class="field-row">
+                <label for="rows">Rows
+                  <input id="rows" name="rows" type="number" min="4" max="13" step="1" value="9" inputmode="numeric">
+                </label>
+                <label for="cols">Columns
+                  <input id="cols" name="cols" type="number" min="4" max="13" step="1" value="9" inputmode="numeric">
+                </label>
+              </div>
+              <button class="primary" type="submit">Start new game</button>
+            </form>
+            <button class="secondary" id="flag-mode" type="button" aria-pressed="false" style="margin-top: 9px">Flag mode: off</button>
+          </section>
+        </aside>
+      </div>
+
+      <section class="panel help-panel" aria-labelledby="how-title">
+        <h2 id="how-title">How to play</h2>
+        <ul>
+          <li><span>👆</span><span>Click a square to reveal it. Numbers count nearby mines.</span></li>
+          <li><span>🚩</span><span>Right-click to flag a mine, or switch on Flag mode for touch screens.</span></li>
+          <li><span>✨</span><span>Reveal every safe square to win. The first reveal is always safe.</span></li>
+        </ul>
       </section>
-
-      <aside class="side-panel">
-        <section class="panel settings" aria-labelledby="settings-title">
-          <h2 id="settings-title">Board size</h2>
-          <p>Choose any number of rows and columns from 4 to 13.</p>
-          <form id="settings-form" novalidate>
-            <div class="field-row">
-              <label for="rows">Rows
-                <input id="rows" name="rows" type="number" min="4" max="13" step="1" value="9" inputmode="numeric">
-              </label>
-              <label for="cols">Columns
-                <input id="cols" name="cols" type="number" min="4" max="13" step="1" value="9" inputmode="numeric">
-              </label>
-            </div>
-            <button class="primary" type="submit">Start new game</button>
-          </form>
-          <button class="secondary" id="flag-mode" type="button" aria-pressed="false" style="margin-top: 9px">Flag mode: off</button>
-        </section>
-
-        <section class="panel help-panel" aria-labelledby="how-title">
-          <h2 id="how-title">How to play</h2>
-          <ul>
-            <li><span>👆</span><span>Click a square to reveal it. Numbers count nearby mines.</span></li>
-            <li><span>🚩</span><span>Right-click to flag a mine, or switch on Flag mode for touch screens.</span></li>
-            <li><span>✨</span><span>Reveal every safe square to win. The first reveal is always safe.</span></li>
-          </ul>
-        </section>
-      </aside>
     </div>
 
     <footer>Play right in your browser. No account needed to play.</footer>
@@ -281,6 +323,9 @@
     const colsInput = document.querySelector("#cols");
     const settingsForm = document.querySelector("#settings-form");
     const flagModeButton = document.querySelector("#flag-mode");
+    const welcomeDialog = document.querySelector("#welcome-dialog");
+    const welcomeStartButton = document.querySelector("#welcome-start");
+    const gameContent = document.querySelector("#game-content");
 
     let rows = 9;
     let cols = 9;
@@ -343,7 +388,7 @@
 
     function renderBoard() {
       boardElement.replaceChildren();
-      boardElement.style.gridTemplateColumns = `repeat(${cols}, 34px)`;
+      boardElement.style.gridTemplateColumns = `repeat(${cols}, var(--cell-size))`;
       boardElement.setAttribute("aria-label", `${rows} rows by ${cols} columns Minesweeper board`);
 
       for (let row = 0; row < rows; row += 1) {
@@ -478,7 +523,14 @@
       flagModeButton.textContent = `Flag mode: ${flagMode ? "on" : "off"}`;
     });
 
-    startNewGame();
+    welcomeStartButton.addEventListener("click", () => welcomeDialog.close());
+    welcomeDialog.addEventListener("close", () => {
+      gameContent.hidden = false;
+      startNewGame();
+      boardElement.querySelector("button").focus({ preventScroll: true });
+    }, { once: true });
+
+    welcomeDialog.showModal();
   </script>
 </body>
 </html>
