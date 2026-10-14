@@ -31,9 +31,9 @@
     }
 
     .scenery { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: #c5d4cf; }
-    .road-photo { position: absolute; inset: -6%; background: url("./assets/foggy-road.jpg") center 58% / cover no-repeat; animation: walk-forward 42s ease-in-out infinite alternate; will-change: transform; }
-    .fog { position: absolute; inset: -25%; background: radial-gradient(ellipse at 15% 60%, rgba(247, 251, 249, .65), transparent 55%), radial-gradient(ellipse at 80% 35%, rgba(234, 242, 239, .6), transparent 60%); animation: drifting-mist 38s ease-in-out infinite alternate; }
-    .fog-far { opacity: .5; animation-duration: 53s; animation-direction: alternate-reverse; }
+    .road-photo { position: absolute; inset: -6%; background: url("./assets/foggy-road.jpg") center 58% / cover no-repeat; animation: walk-forward 26s ease-in-out infinite alternate; will-change: transform; }
+    .fog { position: absolute; inset: -25%; background: radial-gradient(ellipse at 15% 60%, rgba(247, 251, 249, .65), transparent 55%), radial-gradient(ellipse at 80% 35%, rgba(234, 242, 239, .6), transparent 60%); animation: drifting-mist 25s ease-in-out infinite alternate; }
+    .fog-far { opacity: .5; animation-duration: 35s; animation-direction: alternate-reverse; }
     .scenery::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(224, 236, 230, .22), rgba(213, 228, 220, .35)); }
     .scenery.is-paused .road-photo, .scenery.is-paused .fog { animation-play-state: paused; }
 
@@ -168,6 +168,10 @@
 
     .board {
       --cell-size: 34px;
+      touch-action: manipulation;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
       display: grid;
       width: max-content;
       gap: 4px;
@@ -198,6 +202,7 @@
     .cell:not(:disabled):hover { transform: translateY(-1px); border-color: #83a38e; background: #f7fbf5; }
     .cell:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #8bbda0; outline-offset: 2px; }
     .cell:disabled { cursor: default; }
+    .cell.pressing { box-shadow: inset 0 0 0 2px #83a38e; }
     .cell.revealed { border-color: #b8cfdc; background: #e8f2f7; }
     .cell.empty { border-color: #8aafc3; background: #c6dce8; box-shadow: inset 0 1px 3px rgba(47, 85, 107, .1); }
     .cell.flagged { color: #bd5941; }
@@ -340,8 +345,8 @@
       <section class="panel help-panel" aria-labelledby="how-title">
         <h2 id="how-title">How to play</h2>
         <ul>
-          <li><span>👆</span><span>Click a square to reveal it. Numbers count nearby mines.</span></li>
-          <li><span>🚩</span><span>Right-click to flag a mine, or switch on Flag mode for touch screens.</span></li>
+          <li><span>👆</span><span>Tap or click a square to reveal it. Numbers count nearby mines.</span></li>
+          <li><span>🚩</span><span>On your phone, hold a square to place or remove a flag. On a computer, right-click. Flag mode also lets you tap to flag.</span></li>
           <li><span>✨</span><span>Reveal every safe square to win. The first reveal is always safe.</span></li>
         </ul>
       </section>
@@ -355,6 +360,8 @@
 
     const MIN_SIZE = 4;
     const MAX_SIZE = 13;
+    const LONG_PRESS_MS = 450;
+    const TOUCH_MOVE_LIMIT = 12;
     const boardElement = document.querySelector("#board");
     const statusElement = document.querySelector("#status");
     const sizeElement = document.querySelector("#board-size");
@@ -398,6 +405,85 @@
     let dialogMode = "welcome";
     let pendingBoardSize = null;
     let backgroundPaused = motionPreference.matches;
+    let touchGesture = null;
+    let suppressTouchClickUntil = 0;
+
+    function cancelTouchGesture() {
+      if (!touchGesture) return;
+      const gesture = touchGesture;
+      touchGesture = null;
+      clearTimeout(gesture.timer);
+      gesture.cell.classList.remove("pressing");
+      if (boardElement.hasPointerCapture(gesture.pointerId)) {
+        boardElement.releasePointerCapture(gesture.pointerId);
+      }
+    }
+
+    boardElement.addEventListener("pointerdown", (event) => {
+      if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+      cancelTouchGesture();
+      if (!event.isPrimary || event.button !== 0) return;
+      const cell = event.target.closest(".cell");
+      if (!cell || cell.disabled) return;
+
+      suppressTouchClickUntil = Date.now() + 1000;
+      const gesture = {
+        pointerId: event.pointerId,
+        row: Number(cell.dataset.row),
+        col: Number(cell.dataset.col),
+        x: event.clientX,
+        y: event.clientY,
+        cell,
+        longPressed: false,
+        timer: null
+      };
+      touchGesture = gesture;
+      cell.classList.add("pressing");
+      // Capture on the board so a flag's redraw cannot lose the held pointer.
+      boardElement.setPointerCapture(event.pointerId);
+      gesture.timer = setTimeout(() => {
+        if (touchGesture !== gesture) return;
+        gesture.longPressed = true;
+        suppressTouchClickUntil = Date.now() + 1000;
+        toggleFlag(gesture.row, gesture.col);
+      }, LONG_PRESS_MS);
+    });
+
+    boardElement.addEventListener("pointermove", (event) => {
+      if (!touchGesture || touchGesture.pointerId !== event.pointerId) return;
+      if (Math.hypot(event.clientX - touchGesture.x, event.clientY - touchGesture.y) > TOUCH_MOVE_LIMIT) {
+        cancelTouchGesture();
+      }
+    });
+
+    boardElement.addEventListener("pointerup", (event) => {
+      if (!touchGesture || touchGesture.pointerId !== event.pointerId) return;
+      const gesture = touchGesture;
+      cancelTouchGesture();
+      suppressTouchClickUntil = Date.now() + 1000;
+      if (!gesture.longPressed) {
+        if (flagMode) toggleFlag(gesture.row, gesture.col);
+        else revealCell(gesture.row, gesture.col);
+      }
+    });
+
+    function cancelMatchingTouch(event) {
+      if (touchGesture && touchGesture.pointerId === event.pointerId) cancelTouchGesture();
+    }
+    boardElement.addEventListener("pointercancel", cancelMatchingTouch);
+    boardElement.addEventListener("lostpointercapture", cancelMatchingTouch);
+    boardElement.addEventListener("contextmenu", (event) => event.preventDefault());
+    window.addEventListener("blur", cancelTouchGesture);
+
+    // Touch is handled on pointerup. Block the later synthetic click so a hold
+    // never reveals a square or removes a flag a second time after the redraw.
+    boardElement.addEventListener("click", (event) => {
+      if (event.pointerType === "touch" || event.pointerType === "pen" ||
+          (event.detail !== 0 && Date.now() < suppressTouchClickUntil)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }, true);
 
     function setBackgroundPaused(paused) {
       backgroundPaused = paused;
@@ -503,6 +589,8 @@
           const cell = document.createElement("button");
           cell.type = "button";
           cell.className = "cell";
+          cell.dataset.row = row;
+          cell.dataset.col = col;
           cell.setAttribute("role", "gridcell");
 
           if (isFlagged) {
@@ -530,6 +618,8 @@
           });
           cell.addEventListener("contextmenu", (event) => {
             event.preventDefault();
+            if (event.pointerType === "touch" || event.pointerType === "pen" ||
+                touchGesture || Date.now() < suppressTouchClickUntil) return;
             toggleFlag(row, col);
           });
           boardElement.append(cell);
@@ -606,6 +696,7 @@
     }
 
     function startNewGame(requestedRows, requestedCols) {
+      cancelTouchGesture();
       rows = requestedRows;
       cols = requestedCols;
       // Preserve the classic 9x9 board's 10 mines while scaling with board area.
